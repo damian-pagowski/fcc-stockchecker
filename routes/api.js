@@ -8,10 +8,7 @@
 
 'use strict'
 
-// const expect = require('chai').expect
-// const request = require('request-promise')
 const CONNECTION_STRING = process.env.MONGOLAB_URI
-// const Stock = require('../models/stock')
 const mongoose = require('mongoose')
 mongoose.connect(CONNECTION_STRING, { useNewUrlParser: true })
 const stocksHandler = require('../controllers/stockHandler')
@@ -24,20 +21,44 @@ module.exports = function (app) {
     async function runTask (fun, params) {
       return fun(params)
     }
+
     const getSingleStockData = stockCode =>
       stocksHandler
         .getData(stockCode)
         .then(data => likesDb.getLikes(stocksHandler.extractPrice(data)))
+
+    const calculateRelLikes = stocks => {
+      let stock1 = stocks[0]
+      let stock2 = stocks[1]
+      stock1.rel_likes = stock1.likes - stock2.likes
+      stock2.rel_likes = stock2.likes - stock1.likes
+      delete stock1.likes
+      delete stock2.likes
+      return [stock1, stock2]
+    }
+
     // add tasks
-    tasks.push(
-      like
-        ? runTask(likesDb.getLikesWithIncrement, { stock })
-        : runTask(likesDb.getLikes, { stock })
-    )
-    tasks.push(runTask(getSingleStockData, stock))
+    if (Array.isArray(stock)) {
+      stock.forEach(symbol => {
+        tasks.push(runTask(getSingleStockData, symbol))
+        if (like) {
+          tasks.push(runTask(likesDb.getLikesWithIncrement, { stock: symbol }))
+        }
+      })
+    } else {
+      tasks.push(runTask(getSingleStockData, stock))
+      tasks.push(runTask(likesDb.getLikesWithIncrement, { stock }))
+    }
     // execute tasks
-    Promise.all(tasks).then(results =>
-      res.json({ stockData: results.filter(x => x)[0] })
-    )
+    Promise.all(tasks).then(results => {
+      console.log(JSON.stringify(results))
+      let data = results.filter(r => r != null)
+      res.json({
+        stockData:
+          data.length == 2
+            ? calculateRelLikes(data)
+            : data.length == 1 ? data[0] : data
+      })
+    })
   })
 }
