@@ -15,11 +15,33 @@ const stocksHandler = require('../controllers/stockHandler')
 const likesDb = require('../controllers/likesHandler')
 
 module.exports = function (app) {
-  app.route('/api/stock-prices').get(function (req, res) {
+  app.route('/api/test').get(function (req, res) {
+    const { stock, ip } = req.query
+    const addr = req.ip
+    console.log(
+      addr +
+        ' / ' +
+        req.ips +
+        ' / ' +
+        req.connection.remoteAddress +
+        ' / ' +
+        req.headers['x-forwarded-for']
+    )
+    const Stock = require('../models/stock')
+    Stock.findOne({ name: stock }).then(found =>
+      found.handleLike(ip).then(updated => res.json(updated))
+    )
+  }), app.route('/api/stock-prices').get(function (req, res) {
     const { stock, like } = req.query
+    const { ip } = req
+    console.log('LIKE : ' + like)
     const tasks = []
-    async function runTask (fun, params) {
-      return fun(params)
+
+    // TODO
+    // Set the content security policies to only allow loading of scripts and CSS from your server.
+
+    async function runTask (fun, param1) {
+      return fun(param1)
     }
 
     const getSingleStockData = stockCode =>
@@ -40,19 +62,29 @@ module.exports = function (app) {
     // add tasks
     if (Array.isArray(stock)) {
       stock.forEach(symbol => {
-        tasks.push(runTask(getSingleStockData, symbol))
         if (like) {
-          tasks.push(runTask(likesDb.getLikesWithIncrement, { stock: symbol }))
+          console.log('LIKE TASK ADDED: ')
+          tasks.push(
+            runTask(
+              likesDb.getLikes,
+              { stock: symbol, updatLikes: true, ip }
+            )
+          )
         }
+        tasks.push(runTask(getSingleStockData, symbol))
       })
     } else {
+      if (like) {
+        tasks.push(
+          runTask(likesDb.getLikes, { stock, updatLikes: true, ip })
+        )
+      }
       tasks.push(runTask(getSingleStockData, stock))
-      tasks.push(runTask(likesDb.getLikesWithIncrement, { stock }))
     }
     // execute tasks
     Promise.all(tasks).then(results => {
-      console.log(JSON.stringify(results))
-      let data = results.filter(r => r != null)
+      console.log('Results: ' + JSON.stringify(results))
+      let data = results.filter(r => r != null) 
       res.json({
         stockData:
           data.length == 2
